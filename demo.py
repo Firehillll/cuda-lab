@@ -114,29 +114,40 @@ def train(data, vocab_size, epochs=50, learning_rate=0.1, use_gpu=False):
 # ============================================================
 # USER STORY 7-8: Benchmark CPU vs GPU
 # ============================================================
-def benchmark():
-    """Meet snelheid CPU vs GPU voor exp() operatie"""
+def benchmark(n=5_000_000, runs=3):
+    """Meet snelheid CPU vs GPU voor exp() operatie
+
+    Eerst een opwarmronde, zodat het initialiseren van de CUDA-context niet in
+    de meting valt. Daarna meerdere runs, zodat uitschieters zichtbaar worden.
+    Geeft het gemiddelde terug plus de losse metingen per run.
+    """
     import time
 
-    n = 5_000_000
     x = np.random.randn(n).astype(np.float32)
 
-    # CPU benchmark
-    start = time.time()
+    # Opwarmronde, niet meegeteld
     _ = np.exp(x)
-    cpu_time = time.time() - start
-
-    # GPU benchmark
     if NUMBA_AVAILABLE:
-        start = time.time()
         _ = fast_exp(x)
-        gpu_time = time.time() - start
-        speedup = cpu_time / gpu_time
-    else:
-        gpu_time = cpu_time
-        speedup = 1.0
 
-    return cpu_time, gpu_time, speedup
+    cpu_runs, gpu_runs = [], []
+    for _ in range(runs):
+        start = time.time()
+        _ = np.exp(x)
+        cpu_runs.append(time.time() - start)
+
+        if NUMBA_AVAILABLE:
+            start = time.time()
+            _ = fast_exp(x)
+            gpu_runs.append(time.time() - start)
+        else:
+            gpu_runs.append(cpu_runs[-1])
+
+    cpu_time = sum(cpu_runs) / runs
+    gpu_time = sum(gpu_runs) / runs
+    speedup = cpu_time / gpu_time
+
+    return cpu_time, gpu_time, speedup, cpu_runs, gpu_runs
 
 
 # ============================================================
@@ -283,9 +294,11 @@ def main():
 
     # USER STORY 7-8: Benchmark
     print("⏱️  USER STORY 7-8: Benchmark CPU vs GPU")
-    cpu_time, gpu_time, speedup = benchmark()
-    print(f"   CPU tijd:  {cpu_time*1000:6.2f} ms")
-    print(f"   GPU tijd:  {gpu_time*1000:6.2f} ms")
+    print("   5 miljoen floats, exp(), na een opwarmronde")
+    cpu_time, gpu_time, speedup, cpu_runs, gpu_runs = benchmark()
+    for i, (c, g) in enumerate(zip(cpu_runs, gpu_runs), 1):
+        print(f"   run {i}:      CPU {c*1000:6.2f} ms   GPU {g*1000:6.2f} ms   {c/g:4.2f}x")
+    print(f"   gemiddeld:  CPU {cpu_time*1000:6.2f} ms   GPU {gpu_time*1000:6.2f} ms")
     print(f"   ⚡ Speedup: {speedup:.1f}x")
     print()
 
