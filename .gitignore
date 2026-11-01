@@ -4,5 +4,6 @@ model_W.npy
 model_vocab.json
 model.npy
 vocab.json
+loss.png
 .DS_Store
 .ipynb_checkpoints/

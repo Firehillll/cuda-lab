@@ -76,7 +76,7 @@ def softmax(logits, use_gpu=False):
     return exp_vals / exp_vals.sum(axis=1, keepdims=True)
 
 
-def train(data, vocab_size, epochs=50, use_gpu=False):
+def train(data, vocab_size, epochs=50, learning_rate=0.1, use_gpu=False):
     """Train een simpel bigram model"""
     # Initialiseer gewichten
     W = np.random.randn(vocab_size, vocab_size).astype(np.float32) * 0.01
@@ -103,7 +103,7 @@ def train(data, vocab_size, epochs=50, use_gpu=False):
 
         # Update weights
         for i in range(len(xs)):
-            W[xs[i]] -= 0.1 * dlogits[i]
+            W[xs[i]] -= learning_rate * dlogits[i]
 
         if epoch % 10 == 0:
             print(f"  Epoch {epoch:3d}: loss = {loss:.3f}")
@@ -180,6 +180,66 @@ def generate(W, stoi, itos, start='e', length=100):
 
 
 # ============================================================
+# USER STORY 12: Loss-grafiek bekijken
+# ============================================================
+def plot_losses(losses, bestand='loss.png'):
+    """Toon het lossverloop als grafiek in de terminal en sla een PNG op"""
+    # Grafiek in de terminal - werkt altijd, geen extra bibliotheek nodig
+    hoogte = 8
+    laagste, hoogste = min(losses), max(losses)
+    bereik = (hoogste - laagste) or 1.0
+    kolommen = losses[::max(1, len(losses) // 50)]
+
+    for rij in range(hoogte, 0, -1):
+        grens = laagste + bereik * rij / hoogte
+        lijn = ''.join('*' if l >= grens else ' ' for l in kolommen)
+        print(f"   {grens:6.3f} |{lijn}")
+    print(f"          +{'-' * len(kolommen)}")
+    print(f"           epoch 0 → {len(losses) - 1}")
+
+    # PNG erbij, als matplotlib beschikbaar is
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(6, 3))
+        plt.plot(losses)
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss (cross entropy)')
+        plt.title('CUDA-Lab trainingsverloop')
+        plt.tight_layout()
+        plt.savefig(bestand, dpi=120)
+        plt.close()
+        return bestand
+    except ImportError:
+        return None
+
+
+# ============================================================
+# USER STORY 13: Duidelijke foutmeldingen bij ongeldige invoer
+# ============================================================
+def valideer_instellingen(epochs, learning_rate, lengte):
+    """Controleer de hyperparameters en geef een begrijpelijke fout bij onzin"""
+    if not isinstance(epochs, int) or epochs < 1:
+        raise ValueError(
+            f"epochs moet een positief geheel getal zijn, maar was {epochs!r}. "
+            "Probeer bijvoorbeeld epochs=50."
+        )
+    if not 0 < learning_rate <= 1:
+        raise ValueError(
+            f"learning_rate moet tussen 0 en 1 liggen, maar was {learning_rate!r}. "
+            "Een te grote waarde laat de training ontsporen; probeer 0.1."
+        )
+    if not isinstance(lengte, int) or lengte < 1:
+        raise ValueError(
+            f"lengte moet een positief geheel getal zijn, maar was {lengte!r}. "
+            "Probeer bijvoorbeeld lengte=150."
+        )
+    return True
+
+
+# ============================================================
 # MAIN DEMO
 # ============================================================
 def main():
@@ -196,9 +256,19 @@ def main():
     print(f"   ✅ Vocabulaire: {len(stoi)} unieke karakters")
     print()
 
-    # USER STORY 3-4: CPU Training
-    print("🔄 USER STORY 3-4: Training op CPU")
-    W_cpu, losses_cpu = train(data, len(stoi), epochs=50, use_gpu=False)
+    # USER STORY 3: Hyperparameters instellen
+    print("⚙️  USER STORY 3: Hyperparameters instellen")
+    epochs = 50
+    learning_rate = 0.1
+    lengte = 150
+    valideer_instellingen(epochs, learning_rate, lengte)
+    print(f"   ✅ epochs={epochs}, learning_rate={learning_rate}, lengte={lengte}")
+    print()
+
+    # USER STORY 4: CPU Training
+    print("🔄 USER STORY 4: Training op CPU")
+    W_cpu, losses_cpu = train(data, len(stoi), epochs=epochs,
+                              learning_rate=learning_rate, use_gpu=False)
     print(f"   ✅ Loss: {losses_cpu[0]:.3f} → {losses_cpu[-1]:.3f}")
     print()
 
@@ -206,7 +276,8 @@ def main():
     print("🚀 USER STORY 5-6: Training met GPU (CUDA kernel)")
     if NUMBA_AVAILABLE:
         print("   ⚡ Gebruikt @vectorize(target='cuda') kernel")
-    W_gpu, losses_gpu = train(data, len(stoi), epochs=50, use_gpu=True)
+    W_gpu, losses_gpu = train(data, len(stoi), epochs=epochs,
+                              learning_rate=learning_rate, use_gpu=True)
     print(f"   ✅ Loss: {losses_gpu[0]:.3f} → {losses_gpu[-1]:.3f}")
     print()
 
@@ -228,32 +299,52 @@ def main():
 
     # USER STORY 11: Genereren
     print("🎲 USER STORY 11: Tekst genereren")
-    generated = generate(W_cpu, stoi, itos, start='e', length=150)
+    generated = generate(W_cpu, stoi, itos, start='e', length=lengte)
     print(f'   "{generated}"')
+    print()
+
+    # USER STORY 12: Loss-grafiek
+    print("📈 USER STORY 12: Loss-grafiek bekijken")
+    bestand = plot_losses(losses_cpu)
+    if bestand:
+        print(f"   ✅ Grafiek ook opgeslagen als {bestand}")
+    else:
+        print("   ℹ️  Matplotlib niet beschikbaar - alleen terminalgrafiek")
+    print()
+
+    # USER STORY 13: Duidelijke foutmeldingen
+    print("🛡️  USER STORY 13: Duidelijke foutmeldingen bij ongeldige invoer")
+    for slechte_waarde in [(-5, 0.1, 150), (50, 7.5, 150)]:
+        try:
+            valideer_instellingen(*slechte_waarde)
+        except ValueError as fout:
+            print(f"   ✅ Afgevangen: {fout}")
     print()
 
     # Samenvatting
     print("="*60)
-    print("  ✅ ALLE 8 MUST-HAVE USER STORIES GEDEMONSTREERD")
+    print("  ✅ ALLE MUST-HAVE EN SHOULD-HAVE STORIES GEDEMONSTREERD")
     print("="*60)
     print("""
+    Must have (8/8)
     [1] ✅ Dataset inladen
     [2] ✅ Tokeniseren
-    [3] ✅ Model configureren
+    [3] ✅ Hyperparameters instellen
     [4] ✅ CPU training
     [5] ✅ GPU training (CUDA @vectorize kernel)
-    [6] ✅ Loss tracking
+    [6] ✅ Loss volgen
     [7] ✅ CPU vs GPU benchmark
-    [8] ✅ Speedup meten
+    [8] ✅ Speedup zien
 
-    Plus 3 Should-have:
+    Should have (5/5)
     [9]  ✅ Model opslaan
     [10] ✅ Model laden
     [11] ✅ Tekst genereren
+    [12] ✅ Loss-grafiek bekijken
+    [13] ✅ Duidelijke foutmeldingen
 
-    📈 Totaal: 11/13 user stories (85%)
-    🎓 CUDA fundamentals gedemonstreerd
-    🚀 Klaar voor assessment!
+    📈 Totaal: 13/13 user stories binnen scope (100%)
+    ⚪ Could have (14-18) bewust niet opgepakt - MoSCoW
     """)
 
 
